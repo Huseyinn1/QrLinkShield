@@ -5,9 +5,17 @@ import os
 import requests
 import base64
 from urllib.parse import urlparse
-
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi import Body
+from pydantic import BaseModel
 app = FastAPI()
-
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Güvenlik açısından sadece frontend domainini yazman daha iyidir
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 # .env yerine doğrudan burada tanımlıyoruz
 VT_API_KEY = "a7a3b876563f84d2a52a7c75e76da9430a2f20bfc1b22c37e3148f9d1753c710"
 ALLOWED_DOMAINS = ["guvenli-site.com", "example.com"]
@@ -65,3 +73,23 @@ def check_virustotal(url: str) -> str:
         return "suspicious"
     else:
         return "clean"
+class URLRequest(BaseModel):
+    url: str
+
+@app.post("/scan-url")
+async def scan_url(request: URLRequest):
+    url = request.url
+
+    domain_result = check_domain(url)
+    if domain_result == "passed":
+        return {
+            "decoded_url": url,
+            "domain_check": "passed",
+            "security_status": "trusted (vt skipped)"
+        }
+
+    return {
+        "decoded_url": url,
+        "domain_check": "failed",
+        "security_status": check_virustotal(url)
+    }
