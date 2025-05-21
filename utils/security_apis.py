@@ -3,10 +3,7 @@ from typing import Dict, Any
 import json
 from urllib.parse import urlparse
 
-# API Anahtarları (gerçek uygulamada .env dosyasından alınmalı)
-ABUSEIPDB_API_KEY = "ec63c516bc3fdfa05d445e0025dbb6f0ae4bf7e7ccd211f04e7227be9a0315efc9fd437acf797b97"
-GOOGLE_SAFE_BROWSING_API_KEY = "AIzaSyAVeUa7noekwZoxrqxRhvrMlCqNQEic1W0"
-URLSCAN_API_KEY = "019697d4-7d80-762b-ada7-d6f27a1ce344"
+
 
 def check_abuseipdb(url: str) -> Dict[str, Any]:
     """
