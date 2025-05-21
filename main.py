@@ -1,4 +1,4 @@
-from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi import FastAPI, UploadFile, File, HTTPException, Depends
 from fastapi.responses import JSONResponse
 from utils.qr_utils import extract_qr_link
 from utils.security_checks import check_ssl, check_whois, check_phishing, check_ip
@@ -13,6 +13,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi import Body
 from pydantic import BaseModel
 from typing import Dict, List, Any
+from sqlalchemy.orm import Session
+from datetime import datetime
+from models import MaliciousURL
+from database import get_db, engine
+from models import Base
 
 class URLRequest(BaseModel):
     url: str
@@ -189,8 +194,27 @@ def check_all_security_services(url: str) -> Dict[str, Any]:
     
     return response
 
+# Veritabanı tablolarını oluştur
+Base.metadata.create_all(bind=engine)
+
+def save_malicious_url(db: Session, security_result: dict):
+    """Zararlı URL'yi veritabanına kaydet"""
+    if any(security_result["bulgu_durumlari"].values()):
+        db_url = MaliciousURL(
+            url=security_result["url"],
+            malicious_services=security_result["malicious_services"],
+            risk_factors=security_result["risk_factors"],
+            security_status=security_result["security_status"],
+            service_details=security_result["servis_detaylari"]
+        )
+        db.add(db_url)
+        db.commit()
+        db.refresh(db_url)
+        return db_url
+    return None
+
 @app.post("/scan-qr")
-async def scan_qr(file: UploadFile = File(...)):
+async def scan_qr(file: UploadFile = File(...), db: Session = Depends(get_db)):
     if file.content_type not in ["image/png", "image/jpeg", "image/jpg"]:
         raise HTTPException(status_code=400, detail="Sadece PNG veya JPG dosyası kabul edilir.")
 
@@ -215,10 +239,13 @@ async def scan_qr(file: UploadFile = File(...)):
     # Tüm güvenlik servislerini kontrol et
     security_result = check_all_security_services(qr_url)
     
+    # Eğer zararlı bulgu varsa kaydet
+    save_malicious_url(db, security_result)
+    
     return JSONResponse(content=security_result)
 
 @app.post("/scan-url")
-async def scan_url(request: URLRequest):
+async def scan_url(request: URLRequest, db: Session = Depends(get_db)):
     url = request.url
 
     # Domain güvenliyse kontrolleri atla
@@ -235,6 +262,9 @@ async def scan_url(request: URLRequest):
 
     # Tüm güvenlik servislerini kontrol et
     security_result = check_all_security_services(url)
+    
+    # Eğer zararlı bulgu varsa kaydet
+    save_malicious_url(db, security_result)
     
     return security_result
 
@@ -338,6 +368,23 @@ async def fast_check(request: URLRequest):
     }
     
     return response
+
+@app.get("/malicious-urls", response_model=List[dict])
+async def get_malicious_urls(db: Session = Depends(get_db)):
+    """Tüm zararlı URL'leri getir"""
+    urls = db.query(MaliciousURL).all()
+    return [
+        {
+            "id": url.id,
+            "url": url.url,
+            "detection_time": url.detection_time,
+            "malicious_services": url.malicious_services,
+            "risk_factors": url.risk_factors,
+            "security_status": url.security_status,
+            "service_details": url.service_details
+        }
+        for url in urls
+    ]
 
 def check_domain(url: str) -> str:
     parsed = urlparse(url)
